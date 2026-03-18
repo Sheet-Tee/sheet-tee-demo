@@ -1,125 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Sheet-Tee Golf</title>
-  
-  <script src="config.js"></script>
-  
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #1a4a2e; font-family: Georgia, serif; color: #f0ead6; overflow-x: hidden; }
-    .btn-gold { background: #d4af37; color: #1a4a2e; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family: Georgia, serif; transition: opacity 0.2s; }
-    .btn-gold:active { opacity: 0.8; }
-    .input-field { background: rgba(255,255,255,0.06); border: 1px solid rgba(212,175,55,0.3); border-radius: 8px; padding: 12px; color: #f0ead6; width: 100%; max-width: 300px; text-align: center; margin-bottom: 12px; outline: none; font-size: 16px; }
-    .nav-btn { flex: 1; padding: 12px 5px; background: none; border: none; color: rgba(240,234,214,0.4); font-size: 11px; letter-spacing: 1px; cursor: pointer; border-bottom: 2px solid transparent; text-transform: uppercase; }
-    .nav-btn.active { color: #d4af37; border-bottom: 2px solid #d4af37; }
-  </style>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <title>Sheet-Tee Master</title>
+    
+    <script src="config.js"></script>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        /* 3. YOUR PREMIUM CSS - Controlled by CONFIG */
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { 
+            background: #1a4a2e; /* Your Signature Green */
+            font-family: Georgia, serif; 
+            color: #f0ead6; 
+            overflow-x: hidden;
+            line-height: 1.4;
+        }
+        .gold-text { color: #d4af37; }
+        .btn-primary { 
+            background: #d4af37; 
+            color: #1a4a2e; 
+            border: none; 
+            padding: 14px; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            width: 100%;
+        }
+        .input-gate {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(212,175,55,0.3);
+            padding: 15px;
+            color: #f0ead6;
+            border-radius: 8px;
+            width: 100%;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 18px;
+        }
+        /* Tab Navigation styling from your original design */
+        .nav-bar { display: flex; background: rgba(0,0,0,0.2); border-bottom: 1px solid #d4af37; }
+        .nav-item { flex: 1; padding: 15px 5px; text-align: center; font-size: 11px; text-transform: uppercase; color: rgba(240,234,214,0.5); cursor: pointer; }
+        .nav-item.active { color: #d4af37; border-bottom: 2px solid #d4af37; }
+    </style>
 </head>
 <body>
-  <div id="root"></div>
+    <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useEffect } = React;
-    const { createClient } = supabase;
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { createClient } = supabase;
 
-    // Use keys from config.js
-    const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+        // Initialize Database using CONFIG variables
+        const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 
-    function LoginScreen({ onUnlock }) {
-      const [val, setVal] = useState("");
-      const [err, setErr] = useState(false);
-      const handleEntry = () => {
-        if (val.toLowerCase() === CONFIG.groupPassword.toLowerCase()) {
-          localStorage.setItem("sheet-tee-auth", "true");
-          onUnlock();
-        } else { setErr(true); }
-      };
-      return (
-        <div style={{height:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:20, textAlign:'center'}}>
-          <img src={CONFIG.logoUrl} style={{width:100, height:100, objectFit:'contain', marginBottom:20}} />
-          <h1 style={{color:'#f0ead6', fontSize:24, marginBottom:8}}>{CONFIG.clubName}</h1>
-          <p style={{color:'#d4af37', fontSize:12, marginBottom:24, letterSpacing:2}}>{CONFIG.tagline}</p>
-          <input type="password" className="input-field" placeholder="Entry Password" onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleEntry()}/>
-          {err && <p style={{color:'#ff6b6b', fontSize:12, marginBottom:10}}>Incorrect Password</p>}
-          <button className="btn-gold" onClick={handleEntry}>Unlock Clubhouse</button>
-        </div>
-      );
-    }
-
-    function App() {
-      const [isAuth, setIsAuth] = useState(!!localStorage.getItem("sheet-tee-auth"));
-      const [view, setView] = useState("signup");
-      const [deferredPrompt, setDeferredPrompt] = useState(null);
-
-      useEffect(() => {
-        window.addEventListener('beforeinstallprompt', (e) => {
-          e.preventDefault();
-          setDeferredPrompt(e);
-        });
-      }, []);
-
-      const triggerInstall = async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          await deferredPrompt.userChoice;
-          setDeferredPrompt(null);
-        } else {
-          const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-          alert(isIOS ? "Tap 'Share' then 'Add to Home Screen'" : "Tap Menu then 'Install App'");
+        /* --- COMPONENT: PASSWORD GATE --- */
+        function AuthGate({ onEntry }) {
+            const [pass, setPass] = useState("");
+            const check = () => {
+                if(pass.toLowerCase() === CONFIG.groupPassword.toLowerCase()) {
+                    localStorage.setItem("st_auth", "true");
+                    onEntry();
+                } else { alert("Access Denied"); }
+            };
+            return (
+                <div style={{height:'100vh', display:'flex', flexDirection:'column', justifyContent:'center', padding:40, textAlign:'center'}}>
+                    <img src={CONFIG.logoUrl} style={{width:120, margin:'0 auto 20px', display:'block'}} />
+                    <h1 style={{fontSize:28, marginBottom:10}}>{CONFIG.clubName}</h1>
+                    <p className="gold-text" style={{fontSize:12, letterSpacing:2, marginBottom:30}}>{CONFIG.tagline}</p>
+                    <input type="password" placeholder="Entry Password" className="input-gate" onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&check()} />
+                    <button className="btn-primary" onClick={check}>Enter Clubhouse</button>
+                </div>
+            );
         }
-      };
 
-      if (!isAuth) return <LoginScreen onUnlock={() => setIsAuth(true)} />;
+        /* --- MAIN APP ENGINE --- */
+        function SheetTeeApp() {
+            const [isAuth, setIsAuth] = useState(localStorage.getItem("st_auth") === "true");
+            const [view, setView] = useState("signup");
 
-      return (
-        <div style={{maxWidth:600, margin:'0 auto', minHeight:'100vh', display:'flex', flexDirection:'column', background:'rgba(0,0,0,0.1)'}}>
-          <header style={{textAlign:'center', padding:24, borderBottom:'2px solid #d4af37', background:'linear-gradient(180deg,#122d1a,#1e4a2a)'}}>
-            <img src={CONFIG.logoUrl} style={{width:80, height:80, objectFit:'contain'}} />
-            <h2 style={{marginTop:10, fontSize:22}}>{CONFIG.clubName}</h2>
-            <div style={{height:1, width:60, background:'#d4af37', margin:'10px auto'}}></div>
-          </header>
+            if (!isAuth) return <AuthGate onEntry={() => setIsAuth(true)} />;
 
-          <nav style={{display:'flex', background:'rgba(0,0,0,0.3)'}}>
-            <button className={`nav-btn ${view==='signup'?'active':''}`} onClick={()=>setView('signup')}>Sign Up</button>
-            <button className={`nav-btn ${view==='tally'?'active':''}`} onClick={()=>setView('tally')}>Who's In</button>
-            <button className={`nav-btn ${view==='pics'?'active':''}`} onClick={()=>setView('pics')}>Pics</button>
-            {CONFIG.enablePlayaClub && <button className={`nav-btn ${view==='playa'?'active':''}`} onClick={()=>setView('playa')}>Playa</button>}
-          </nav>
+            return (
+                <div style={{maxWidth:500, margin:'0 auto', minHeight:'100vh', display:'flex', flexDirection:'column'}}>
+                    <header style={{padding:20, textAlign:'center', borderBottom:'1px solid rgba(212,175,55,0.2)'}}>
+                        <img src={CONFIG.logoUrl} style={{width:60}} />
+                        <h2 style={{fontSize:20, marginTop:10}}>{CONFIG.clubName}</h2>
+                    </header>
 
-          <main style={{flex:1, padding:16}}>
-            {view === 'signup' && (
-              <section>
-                <h3 style={{color:'#d4af37', fontSize:11, letterSpacing:2, marginBottom:15, textTransform:'uppercase'}}>Weekend Signup</h3>
-                <div style={{background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:8, padding:16, textAlign:'center'}}>
-                   <p style={{fontSize:14, color:'rgba(240,234,214,0.6)'}}>Welcome to {CONFIG.clubName}.</p>
-                   <p style={{fontSize:12, marginTop:8, opacity:0.4}}>Roster setup by Sheet-Tee.</p>
+                    <nav className="nav-bar">
+                        <div className={`nav-item ${view==='signup'?'active':''}`} onClick={()=>setView('signup')}>Sign Up</div>
+                        <div className={`nav-item ${view==='tally'?'active':''}`} onClick={()=>setView('tally')}>Who's In</div>
+                        {CONFIG.enablePlayaClub && <div className={`nav-item ${view==='playa'?'active':''}`} onClick={()=>setView('playa')}>Playa Club</div>}
+                    </nav>
+
+                    <main style={{flex:1, padding:20}}>
+                        {/* THE HEART: This is where your original shuffler/signup logic goes */}
+                        {view === 'signup' && (
+                            <div>
+                                <h3 className="gold-text" style={{fontSize:12, letterSpacing:2, marginBottom:20, textAlign:'center'}}>WEEKEND ROSTER</h3>
+                                <div style={{background:'rgba(255,255,255,0.03)', borderRadius:12, padding:20, textAlign:'center', border:'1px solid rgba(255,255,255,0.05)'}}>
+                                    <p style={{opacity:0.6}}>The engine is ready. Roster for {CONFIG.clubName} is active.</p>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* 2026 INSTALL BUTTON */}
+                    <button id="pwa-btn" style={{position:'fixed', bottom:20, right:20, background:'#d4af37', border:'none', width:50, height:50, borderRadius:'50%', fontSize:20, boxShadow:'0 4px 15px rgba(0,0,0,0.4)', cursor:'pointer'}}>📲</button>
                 </div>
-              </section>
-            )}
+            );
+        }
 
-            {view === 'pics' && (
-              <section>
-                <h3 style={{color:'#d4af37', fontSize:11, letterSpacing:2, marginBottom:15, textTransform:'uppercase'}}>{CONFIG.customGalleryName}</h3>
-                <div style={{textAlign:'center', padding:40, color:'rgba(240,234,214,0.3)'}}>
-                  <p>Gallery is ready for uploads.</p>
-                </div>
-              </section>
-            )}
-          </main>
-
-          <button onClick={triggerInstall} style={{position:'fixed', bottom:20, right:20, background:'#d4af37', border:'none', width:50, height:50, borderRadius:'50%', fontSize:20, boxShadow:'0 4px 12px rgba(0,0,0,0.5)', cursor:'pointer'}}>📲</button>
-        </div>
-      );
-    }
-
-    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-  </script>
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<SheetTeeApp />);
+    </script>
 </body>
 </html>
