@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+  <meta name="theme-color" content="#1a3a2a"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Sheet-Tee"/>
+  <meta name="theme-color" content="#1a3a2a"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Sheet-Tee"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sheet-Tee Golf App</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: ' + CONFIG.bgColor + '; font-family: Georgia, serif; color: #f0ead6; }
+    input::placeholder { color: rgba(240,234,214,0.4); }
+    input { color: #f0ead6; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    // ═══════════════════════════════════════════════════════
+    //  DEPLOYMENT ID — only this line changes per client
+    // ═══════════════════════════════════════════════════════
+    const CLUB_ID      = "demo";
+    const SUPABASE_URL = "https://nwizmbkurxxqcfzmrzrx.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53aXptYmt1cnh4cWNmem1yenJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjA3NDEsImV4cCI6MjA4ODgzNjc0MX0.52orb0uMjVJZu4JI-5hSgYVF5bYnBniDy5rIC2j19Xo";
+    // ═══════════════════════════════════════════════════════
+
+        const { createClient } = supabase;
+    const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function loadConfig() {
+      try {
+        const { data } = await sb.from("store")
+          .select("value")
+          .eq("key", "config")
+          .eq("club_id", CLUB_ID)
+          .single();
+        if (data && data.value) {
+          Object.assign(CONFIG, data.value);
+          document.body.style.background = CONFIG.bgColor;
+          const tm = document.querySelector('meta[name="theme-color"]');
+          if (tm) tm.setAttribute("content", CONFIG.bgColor);
+        }
+      } catch(e) { console.warn("Config load failed:", e); }
+    }
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    // CONFIG is loaded from Supabase on mount — see loadConfig()
+    // These are temporary fallbacks until config loads
+    let CONFIG = {
+      clubName:"Loading...", tagline:"", bgColor:"#1a3a2a",
+      bunkerName:"Bunker", bunkerTagline:"", cityLabel:"",
+      weatherLat:0, weatherLon:0, timezone:"America/New_York",
+      adminPw:"admin", acePw:"ace", groupPw:null,
+      players:[], tier:"premium",
+      features:{extendedDays:true,playaClub:true,adminAccess:true,
+                 photos:true,aceWall:true,bunker:true,randos:true,
+                 weather:true,guestSignup:true}
+    };
+    const DEFAULT_PLAYERS  = () => CONFIG.players;
+    const DEFAULT_ADMIN_PW = () => CONFIG.adminPw;
+    const DEFAULT_ACE_PW   = () => CONFIG.acePw;
+    const GROUP_COLORS     = ["#d4af37","#7ec8a0","#7eb8d4","#d47e7e","#c4a07e","#b07ed4"];
+    const ROW1 = [["signup","Sign Up"],["tally","Who's In"],["groups","Randos"]];
+    // Feature flags — resolved after config loads
+    const getF = () => ({
+      extendedDays: CONFIG.tier==="premium" && CONFIG.features?.extendedDays!==false,
+      playaClub:    CONFIG.tier==="premium" && CONFIG.features?.playaClub!==false,
+      adminAccess:  CONFIG.tier==="premium" && CONFIG.features?.adminAccess!==false,
+      photos:       CONFIG.features?.photos!==false,
+      aceWall:      CONFIG.features?.aceWall!==false,
+      bunker:       CONFIG.features?.bunker!==false,
+      randos:       CONFIG.features?.randos!==false,
+      weather:      CONFIG.features?.weather!==false,
+      guestSignup:  CONFIG.features?.guestSignup!==false,
+    });
+    const PREMIUM = () => CONFIG.tier === "premium";
+    const ROW2 = [["photos","📸 Pics"],["bunker", CONFIG.bunkerName],["ace","🏆 Hole in One"]];
+
+    function getWeekendDates() {
+      const now = new Date();
+      const day = now.getDay(); // 0=Sun,1=Mon,...,6=Sat
+      // Anchor to the most recent Saturday (or today if Saturday)
+      // Friday(5), Saturday(6), Sunday(0) -> show current weekend
+      // Monday(1) through Thursday(4) -> show upcoming weekend
+      let diffToSat;
+      if (day === 6) diffToSat = 0;        // today is Saturday
+      else if (day === 0) diffToSat = -1;  // today is Sunday - look back to yesterday's Sat
+      else if (day === 5) diffToSat = 1;   // today is Friday - look ahead to tomorrow's Sat
+      else diffToSat = (6 - day + 7) % 7; // Mon-Thu - look ahead to next Sat
+      const w1sat = new Date(now); w1sat.setDate(now.getDate() + diffToSat);
+      const dates = {};
+      const offsets = { fri1:-1, sat:0, sun:1, mon1:2, fri2:6, fri:7, mon:8, mon2:9 };
+      const fmtFull = (d) => d.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+      const fmtDay  = (d) => String(d.getDate());
+      const fmtMon  = (d) => d.toLocaleDateString("en-US", { month:"short" });
+      Object.entries(offsets).forEach(([k,o]) => {
+        const d = new Date(w1sat); d.setDate(w1sat.getDate() + o);
+        dates[k] = { full: fmtFull(d), day: fmtDay(d), mon: fmtMon(d), date: d };
+      });
+      const key = `${w1sat.getFullYear()}-${w1sat.getMonth()}-${w1sat.getDate()}`;
+      return { dates, key };
+    }
+
+    function chunkEvenly(arr) {
+      if (!arr.length) return [];
+      const n = arr.length;
+      const numGroups = Math.ceil(n / 4);
+      const base = Math.floor(n / numGroups);
+      const remainder = n % numGroups;
+      const groups = [];
+      let idx = 0;
+      for (let g = 0; g < numGroups; g++) {
+        const size = base + (g < remainder ? 1 : 0);
+        groups.push(arr.slice(idx, idx + size));
+        idx += size;
+      }
+      return groups;
+    }
+
+    function compressImage(file, maxW = 800) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const scale = Math.min(1, maxW / img.width);
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", 0.65));
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Supabase data helpers — single row per key in "store" table
+    function clubKey(k){ return CONFIG.clubId + "-" + k; }
+    async function dbGet(key) {
+      key = clubKey(key);
+      const { data } = await sb.from("store").select("value").eq("key", key).single();
+      return data ? data.value : null;
+    }
+    async function dbSet(key, value) {
+      key = clubKey(key);
+      await sb.from("store").upsert({ key, value }, { onConflict: "key" });
+    }
+    function dbListen(key, cb) {
+      key = clubKey(key);
+      const ch = sb.channel("store-" + key)
+        .on("postgres_changes", { event: "*", schema: "public", table: "store", filter: `key=eq.${key}` },
+          payload => cb(payload.new?.value ?? null))
+        .subscribe();
+      return () => sb.removeChannel(ch);
+    }
+
+    function GolfBallLogo({ size = 64 }) {
+      return (
+        <svg width={size} height={size * 0.85} viewBox="0 0 120 102" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="ballL" cx="40%" cy="35%" r="60%">
+              <stop offset="0%" stopColor="#ffffff"/>
+              <stop offset="60%" stopColor="#e8e8e8"/>
+              <stop offset="100%" stopColor="#c8c8c8"/>
+            </radialGradient>
+            <radialGradient id="ballR" cx="60%" cy="35%" r="60%">
+              <stop offset="0%" stopColor="#ffffff"/>
+              <stop offset="60%" stopColor="#e8e8e8"/>
+              <stop offset="100%" stopColor="#c8c8c8"/>
+            </radialGradient>
+            <clipPath id="clipL"><circle cx="38" cy="46" r="34"/></clipPath>
+            <clipPath id="clipR"><circle cx="82" cy="46" r="34"/></clipPath>
+          </defs>
+          <ellipse cx="38" cy="86" rx="28" ry="6" fill="rgba(0,0,0,0.25)"/>
+          <ellipse cx="82" cy="86" rx="28" ry="6" fill="rgba(0,0,0,0.25)"/>
+          <circle cx="38" cy="46" r="34" fill="url(#ballL)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
+          <g clipPath="url(#clipL)" opacity="0.35">
+            <circle cx="28" cy="36" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="40" cy="30" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="52" cy="36" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="22" cy="48" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="34" cy="44" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="46" cy="48" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="26" cy="60" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="40" cy="58" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="52" cy="62" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+          </g>
+          <ellipse cx="30" cy="32" rx="10" ry="7" fill="rgba(255,255,255,0.55)" transform="rotate(-20 30 32)"/>
+          <circle cx="82" cy="46" r="34" fill="url(#ballR)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
+          <g clipPath="url(#clipR)" opacity="0.35">
+            <circle cx="70" cy="36" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="82" cy="30" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="94" cy="36" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="66" cy="48" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="78" cy="44" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="90" cy="48" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="70" cy="60" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="84" cy="58" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+            <circle cx="96" cy="62" r="3.2" fill="none" stroke="#999" strokeWidth="1"/>
+          </g>
+          <ellipse cx="74" cy="32" rx="10" ry="7" fill="rgba(255,255,255,0.55)" transform="rotate(-20 74 32)"/>
+          <path d="M60 78 Q58 60 56 44 Q57 35 60 28 Q63 35 64 44 Q62 60 60 78Z" fill="rgba(0,0,0,0.12)"/>
+          <rect x="44" y="88" width="32" height="13" rx="3" fill="#d4af37"/>
+          <text x="60" y="98.5" textAnchor="middle" fontFamily="Georgia,serif" fontSize="8" fontWeight="bold" fill="#0a2e1a" letterSpacing="1.5">CSC</text>
+        </svg>
+      );
+    }
+
+    function GuestRow({ signups, onToggle, onAddGuest, guestPlayers, flash, activeDays={}, D={} }) {
+      const [guestName, setGuestName] = useState("");
+      async function addGuest(day) {
+        if (!guestName.trim()) return;
+        const name = guestName.trim();
+        setGuestName("");
+        await onAddGuest(name, day);
+      }
+      const allDayKeys=['fri1','sat','sun','mon1','fri2','fri','mon','mon2'];
+      const alwaysOn=['sat','sun','fri','mon'];
+      const days=allDayKeys.filter(k=>alwaysOn.includes(k)||activeDays[k]).map(k=>[k, D[k]?.day||k]);
+      return (
+        <div>
+          {guestPlayers.map(name => {
+            const sg = signups[name] || {};
+            return (
+              <div key={name} style={{ display:"flex", alignItems:"center", marginBottom:8 }}>
+                <div style={{ flex:1, fontSize:15, color:"#f0ead6" }}>{name}</div>
+                <div style={{ display:"flex", gap:8 }}>
+                  {days.map(([day,label]) => (
+                    <button key={day}
+                      style={{ width:30, height:30, borderRadius:5, border:`1px solid ${sg[day]?"#d4af37":"rgba(255,255,255,.12)"}`, background:flash===name+day?"rgba(212,175,55,.55)":sg[day]?"rgba(212,175,55,.22)":"rgba(0,0,0,.35)", color:sg[day]?"#d4af37":"rgba(240,234,214,.28)", fontSize:10, fontWeight:"bold", cursor:"pointer" }}
+                      onClick={() => onToggle(name, day)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+            <input
+              style={{ flex:1, minWidth:120, background:"rgba(255,255,255,.06)", border:"1px solid rgba(212,175,55,.22)", borderRadius:7, padding:"9px 12px", color:"#f0ead6", fontFamily:"Georgia,serif", fontSize:14, outline:"none" }}
+              placeholder="Guest name" value={guestName}
+              onChange={e => setGuestName(e.target.value)}
+              onKeyDown={e => e.key==="Enter" && addGuest("sat")}/>
+            {['fri1','sat','sun','mon1','fri2','fri','mon','mon2'].filter(k=>['sat','sun','fri','mon'].includes(k)||activeDays[k]).map(k=>(
+              <button key={k} style={{ width:34, height:34, borderRadius:5, border:"1px solid rgba(255,255,255,.12)", background:"rgba(0,0,0,.35)", color:"rgba(240,234,214,.5)", fontSize:11, fontWeight:"bold", cursor:"pointer" }} onClick={() => addGuest(k)}>{D[k]?.day||k}</button>
+            ))}
+          </div>
+          <div style={{ fontSize:10, color:"rgba(240,234,214,.25)", marginTop:6 }}>Type name then tap a date to add</div>
+        </div>
+      );
+    }
+
+    function App() {
+      const { dates, key: weekKey } = getWeekendDates();
+      const D = dates; // shorthand
+
+      const [groupUnlocked, setGroupUnlocked] = useState(false);
+      const [groupPwInput,  setGroupPwInput]  = useState("");
+      const [groupPwError,  setGroupPwError]  = useState(false);
+      const [players,       setPlayers]       = useState([]);
+      const [guestPlayers,  setGuestPlayers]   = useState([]);
+      const [signups,       setSignups]        = useState({});
+      const [groupOrder,    setGroupOrder]     = useState({ sat:[], sun:[] });
+      const [photos,        setPhotos]         = useState([]);
+      const [bunkerPhotos,  setBunkerPhotos]   = useState([]);
+      const [acePhotos,     setAcePhotos]      = useState([]);
+      const [passwords,     setPasswords]      = useState({ admin: admin: CONFIG.adminPw||"admin", ace: CONFIG.acePw||"ace" });
+      const [view,          setView]           = useState("signup");
+      const [adminUnlocked, setAdminUnlocked]  = useState(false);
+      const [aceUnlocked,   setAceUnlocked]    = useState(false);
+      const [pwInput,       setPwInput]        = useState("");
+      const [pwError,       setPwError]        = useState(false);
+      const [acePwInput,    setAcePwInput]     = useState("");
+      const [acePwError,    setAcePwError]     = useState(false);
+      const [newName,       setNewName]        = useState("");
+      const [editIdx,       setEditIdx]        = useState(null);
+      const [editName,      setEditName]       = useState("");
+      const [flash,         setFlash]          = useState(null);
+      const [loading,       setLoading]        = useState(true);
+      const [allTimeRounds, setAllTimeRounds]  = useState({});
+      const [showPlaya,     setShowPlaya]      = useState(false);
+      const [editingRounds, setEditingRounds]   = useState(null);
+      const [roundsInput,   setRoundsInput]     = useState("");
+      const [weather,       setWeather]        = useState(null);
+      const [activeDays,    setActiveDays]     = useState({fri1:false,mon1:false,fri2:false,mon2:false});
+      const [lightbox,      setLightbox]       = useState(null);
+      const [lightboxList,  setLightboxList]   = useState([]);
+      const [uploaderName,  setUploaderName]   = useState("");
+      const [caption,       setCaption]        = useState("");
+      const [bunkerUploader,setBunkerUploader] = useState("");
+      const [bunkerCaption, setBunkerCaption]  = useState("");
+      const [aceUploader,   setAceUploader]    = useState("");
+      const [aceCaption,    setAceCaption]     = useState("");
+      const [uploading,     setUploading]      = useState(false);
+      const [newAdminPw,    setNewAdminPw]     = useState("");
+      const [newAcePw,      setNewAcePw]       = useState("");
+      const [pwSaved,       setPwSaved]        = useState("");
+      const fileRef    = useRef();
+      const bunkerRef  = useRef();
+      const aceRef     = useRef();
+      const deletingRef = useRef(false);
+
+      useEffect(() => {
+        async function init() {
+          await loadConfig();
+          // Set initial players from config if Supabase has none yet
+          if (CONFIG.players && CONFIG.players.length) setPlayers(CONFIG.players);
+          // Check group password from localStorage
+          const gpKey = "group-unlocked-" + CLUB_ID;
+          const gpTs  = parseInt(localStorage.getItem(gpKey) || 0);
+          if (!CONFIG.groupPw || Date.now() - gpTs < 14*24*60*60*1000) {
+            setGroupUnlocked(true);
+          }
+          const [p, s, o, ph, b, a, pw, atr, gp, ad] = await Promise.all([
+            dbGet("players"), dbGet(`signups-${weekKey}`), dbGet(`order-${weekKey}`),
+            dbGet("photos-all"), dbGet("bunker-all"), dbGet("ace-all"),
+            dbGet("passwords"), dbGet("allTimeRounds"), dbGet(`guests-${weekKey}`), dbGet(`activeDays-${weekKey}`)
+          ]);
+          if (p)   setPlayers(p);
+          if (s)   setSignups(s);
+          if (o)   setGroupOrder(o);
+          if (ph)  setPhotos(ph);
+          if (b)   setBunkerPhotos(b);
+          if (a)   setAcePhotos(a);
+
+          // One-time migration: scan recent weeks for lost photos and merge to permanent keys
+          {
+            const migrated = await dbGet("photosMigrated");
+            if (!migrated) {
+              const now = new Date();
+              let allPics = ph || [], allBunker = b || [], allAce = a || [];
+              for (let w = 1; w <= 8; w++) {
+                const d = new Date(now); d.setDate(now.getDate() - w*7);
+                const day = d.getDay();
+                const diff = day === 6 ? 0 : -(day+1);
+                const sat = new Date(d); sat.setDate(d.getDate()+diff);
+                const k = `${sat.getFullYear()}-${sat.getMonth()}-${sat.getDate()}`;
+                const [op, ob, oa] = await Promise.all([dbGet(`photos-${k}`), dbGet(`bunker-${k}`), dbGet(`ace-${k}`)]);
+                if (op && op.length) allPics = [...allPics, ...op.filter(x => !allPics.find(y=>y.id===x.id))];
+                if (ob && ob.length) allBunker = [...allBunker, ...ob.filter(x => !allBunker.find(y=>y.id===x.id))];
+                if (oa && oa.length) allAce = [...allAce, ...oa.filter(x => !allAce.find(y=>y.id===x.id))];
+              }
+              if (allPics.length)   { await dbSet("photos-all",  allPics);   setPhotos(allPics); }
+              if (allBunker.length) { await dbSet("bunker-all",  allBunker); setBunkerPhotos(allBunker); }
+              if (allAce.length)    { await dbSet("ace-all",     allAce);    setAcePhotos(allAce); }
+              await dbSet("photosMigrated", true);
+            }
+          }
+          if (pw)  setPasswords(pw);
+          if (atr) setAllTimeRounds(atr);
+          if (gp)  setGuestPlayers(gp);
+          if (ad)  setActiveDays(ad);
+          if (!p)  await dbSet("players", CONFIG.players && CONFIG.players.length ? CONFIG.players : []);
+
+          // Check if we need to roll over from last week
+          const lastProcessed = await dbGet("lastProcessedWeek");
+          const now2 = new Date();
+          const todayDay = now2.getDay(); // 0=Sun,1=Mon,...,6=Sat
+          // Find previous Saturday (the most recent past week's anchor)
+          const diffToPrevSat = todayDay === 6 ? -7 : -(todayDay + 1);
+          const prevSat = new Date(now2);
+          prevSat.setDate(now2.getDate() + diffToPrevSat);
+          const prevKey = `${prevSat.getFullYear()}-${prevSat.getMonth()}-${prevSat.getDate()}`;
+
+          // Check if last week had Monday toggled (mon2 key = far-right MON toggle)
+          const prevActiveDays = await dbGet(`activeDays-${prevKey}`) || {};
+          const hadMonday = !!(prevActiveDays.mon1 || prevActiveDays.mon2);
+
+          // Reset on Monday (day=1) normally, or Tuesday (day=2) if Monday was a play day
+          const shouldReset = prevKey !== lastProcessed && prevKey !== weekKey &&
+            (hadMonday ? todayDay >= 2 : todayDay >= 1);
+
+          if (shouldReset) {
+            const prevSignups = await dbGet(`signups-${prevKey}`) || {};
+
+            // 1. Tally completed rounds (only sat/sun/fri1/mon1 from prev week)
+            const currentATR = await dbGet("allTimeRounds") || {};
+            const updatedATR = { ...currentATR };
+            Object.entries(prevSignups).forEach(([name, days]) => {
+              const rounds = ['fri1','sat','sun','mon1'].filter(k=>days[k]).length;
+              if (rounds > 0) updatedATR[name] = (updatedATR[name] || 0) + rounds;
+            });
+            await dbSet("allTimeRounds", updatedATR);
+            setAllTimeRounds(updatedATR);
+
+            // 2. Migrate week2 signups (fri/mon keys) forward to new weekKey as sat/sun
+            const newSignups = {};
+            const newOrder = {};
+            Object.entries(prevSignups).forEach(([name, days]) => {
+              if (days.fri || days.mon) {
+                newSignups[name] = { sat: !!days.fri, sun: !!days.mon };
+              }
+            });
+            // Migrate group order too
+            const prevOrder = await dbGet(`order-${prevKey}`) || {};
+            if (prevOrder.fri && prevOrder.fri.length) newOrder.sat = prevOrder.fri;
+            if (prevOrder.mon && prevOrder.mon.length) newOrder.sun = prevOrder.mon;
+            // Migrate guests who signed up for week2 - check if they had fri/mon signups
+            const prevGuests = await dbGet(`guests-${prevKey}`) || [];
+            const migratedGuests = prevGuests.filter(name => prevSignups[name]?.fri || prevSignups[name]?.mon);
+            // Save migrated data to new weekKey
+            if (Object.keys(newSignups).length > 0) {
+              await dbSet(`signups-${weekKey}`, newSignups);
+              setSignups(newSignups);
+            }
+            if (Object.keys(newOrder).length > 0) {
+              await dbSet(`order-${weekKey}`, newOrder);
+              setGroupOrder(newOrder);
+            }
+            if (migratedGuests.length > 0) {
+              await dbSet(`guests-${weekKey}`, migratedGuests);
+              setGuestPlayers(migratedGuests);
+            }
+
+            // 3. Clear previous week
+            await dbSet(`signups-${prevKey}`, {});
+            await dbSet(`order-${prevKey}`, {});
+            await dbSet(`guests-${prevKey}`, []);
+            await dbSet("lastProcessedWeek", prevKey);
+          }
+          setLoading(false);
+          // Auto-fetch weather (14 days covers both weekends + extras)
+          try {
+            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.weatherLat}&longitude=${CONFIG.weatherLon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&timezone=${encodeURIComponent(CONFIG.timezone)}&forecast_days=16`);
+            const wdata = await res.json();
+            const today = new Date();
+            const td = today.getDay();
+            const dSat = td === 6 ? 0 : (6 - td + 7) % 7 || 7;
+            function wCode(code) {
+              if (code === 0) return "☀️"; if (code <= 2) return "⛅"; if (code <= 3) return "☁️";
+              if (code <= 49) return "🌫️"; if (code <= 69) return "🌧️"; if (code <= 79) return "❄️";
+              if (code <= 84) return "🌦️"; if (code <= 99) return "⛈️"; return "🌤️";
+            }
+            function wd(i) { const idx=Math.max(0,i); return idx<wdata.daily.weathercode.length?{icon:wCode(wdata.daily.weathercode[idx]),hi:Math.round(wdata.daily.temperature_2m_max[idx]),rain:wdata.daily.precipitation_probability_max[idx]}:null; }
+            const offsets = { fri1:-1, sat:0, sun:1, mon1:2, fri2:6, fri:7, mon:8, mon2:9 };
+            const w = {};
+            Object.entries(offsets).forEach(([k,o]) => { w[k] = wd(dSat+o); });
+            setWeather(w);
+          } catch(e) {}
+        }
+        init();
+        const unsubs = [
+          dbListen("players",              v => v && setPlayers(v)),
+          dbListen(`signups-${weekKey}`,   v => setSignups(v||{})),
+          dbListen(`order-${weekKey}`,     v => setGroupOrder(v||{sat:[],sun:[]})),
+          dbListen("photos-all",           v => { if(!deletingRef.current) setPhotos(v||[]); }),
+          dbListen("bunker-all",           v => { if(!deletingRef.current) setBunkerPhotos(v||[]); }),
+          dbListen("ace-all",              v => { if(!deletingRef.current) setAcePhotos(v||[]); }),
+          dbListen("passwords",            v => v && setPasswords(v)),
+          dbListen("allTimeRounds",         v => v && setAllTimeRounds(v)),
+          dbListen(`guests-${weekKey}`,        v => setGuestPlayers(v||[])),
+          dbListen(`activeDays-${weekKey}`,    v => v && setActiveDays(v)),
+        ];
+        return () => unsubs.forEach(u => u());
+      }, [weekKey]);
+
+      async function toggleDay(day) {
+        const next = { ...activeDays, [day]: !activeDays[day] };
+        setActiveDays(next);
+        await dbSet(`activeDays-${weekKey}`, next);
+      }
+
+      async function addGuest(name, day) {
+        const nextGuests = [...guestPlayers, name];
+        setGuestPlayers(nextGuests);
+        await dbSet(`guests-${weekKey}`, nextGuests);
+        await toggle(name, day);
+      }
+
+      function shuffle(arr) {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      async function toggle(name, day) {
+        // Always fetch latest from DB to avoid stale state
+        const latestSignups = await dbGet(`signups-${weekKey}`) || {};
+        const latestOrder   = await dbGet(`order-${weekKey}`)   || { sat:[], sun:[] };
+        const cur    = latestSignups[name] || { sat:false, sun:false };
+        const wasIn  = !!cur[day];
+        const nextSignups = { ...latestSignups, [name]: { ...cur, [day]: !wasIn } };
+        const curOrder = latestOrder[day] || [];
+        let nextOrder;
+        if (wasIn) {
+          nextOrder = shuffle(curOrder.filter(n => n !== name));
+        } else {
+          nextOrder = shuffle([...curOrder, name]);
+        }
+        setFlash(name+day); setTimeout(()=>setFlash(null),700);
+        await dbSet(`signups-${weekKey}`, nextSignups);
+        await dbSet(`order-${weekKey}`, { ...latestOrder, [day]: nextOrder });
+      }
+
+      async function uploadPhoto(file, wall, nameOverride, capOverride) {
+        if (!file) return;
+        setUploading(true);
+        try {
+          const dataUrl = await compressImage(file);
+          const keyMap = {
+            pics:   "photos-all",
+            bunker: "bunker-all",
+            ace:    "ace-all",
+          };
+          const setterMap = {
+            pics:   setPhotos,
+            bunker: setBunkerPhotos,
+            ace:    setAcePhotos,
+          };
+          const key = keyMap[wall];
+          const setter = setterMap[wall];
+          // Always fetch latest from DB to avoid stale state on multi-upload
+          const latest = await dbGet(key) || [];
+          const photo = { id:Date.now(), dataUrl, caption:(capOverride??"")?.trim()||"", uploader:"", ts:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) };
+          const next = [photo, ...latest];
+          setter(next);
+          await dbSet(key, next);
+        } catch(e) { console.error(e); }
+        setUploading(false);
+      }
+
+      async function deletePhoto(id, wall) {
+        const maps = {
+          pics:   { cur:photos,       setter:setPhotos,       key:"photos-all" },
+          bunker: { cur:bunkerPhotos, setter:setBunkerPhotos, key:"bunker-all" },
+          ace:    { cur:acePhotos,    setter:setAcePhotos,    key:"ace-all"    },
+        };
+        const { cur, setter, key } = maps[wall];
+        deletingRef.current = true;
+        const next = cur.filter(p => p.id !== id);
+        setter(next);
+        setLightboxList(next);
+        // Close lightbox if no photos left, otherwise show next one
+        if (next.length === 0) {
+          setLightbox(null);
+        } else {
+          const newIdx = Math.min(cur.findIndex(p=>p.id===id), next.length - 1);
+          setLightbox({...next[newIdx], wall});
+        }
+        await dbSet(key, next);
+        setTimeout(() => { deletingRef.current = false; }, 2000);
+      }
+
+      async function savePasswords() {
+        const next = { admin: newAdminPw.trim()||passwords.admin, ace: newAcePw.trim()||passwords.ace };
+        await dbSet("passwords", next);
+        setNewAdminPw(""); setNewAcePw("");
+        setPwSaved("✓ Passwords updated"); setTimeout(()=>setPwSaved(""),2500);
+      }
+
+      function handleAdminLogin() { if(pwInput===passwords.admin){setAdminUnlocked(true);setPwError(false);}else setPwError(true); }
+      function handleAceLogin()   { if(acePwInput===passwords.ace){setAceUnlocked(true);setAcePwError(false);}else setAcePwError(true); }
+      function handleGroupLogin() {
+        if (!CONFIG.groupPw || groupPwInput === CONFIG.groupPw) {
+          localStorage.setItem("group-unlocked-" + CLUB_ID, Date.now());
+          setGroupUnlocked(true);
+        } else {
+          setGroupPwError(true);
+        }
+      }
+
+      async function addPlayer()     { if(!newName.trim())return; const next=[...players,newName.trim()]; await dbSet("players",next); setNewName(""); }
+      async function removePlayer(i) { const next=players.filter((_,idx)=>idx!==i); await dbSet("players",next); }
+      async function saveEdit(i)     { const n=[...players]; n[i]=editName.trim(); await dbSet("players",n); setEditIdx(null); }
+
+      async function clearWeek() {
+        await dbSet(`signups-${weekKey}`,{}); await dbSet(`order-${weekKey}`,{});
+        await dbSet(`guests-${weekKey}`,[]);
+        await dbSet(`activeDays-${weekKey}`,{fri1:false,mon1:false,fri2:false,mon2:false});
+      }
+
+      const allPlayers = [...players, ...guestPlayers];
+
+      const C = {
+        app:      { minHeight:"100vh", background:"linear-gradient(170deg,#1a3a2a,#0d3d22 45%,#1a3a2a)", fontFamily:"Georgia,serif", color:"#f0ead6", paddingBottom:80 },
+        header:   { background:"linear-gradient(180deg,#122d1a,#1e4a2a)", borderBottom:"2px solid #d4af37", padding:"20px 20px 16px", textAlign:"center" },
+        title:    { fontSize:22, fontWeight:"bold", letterSpacing:1.5, color:"#f0ead6", margin:"10px 0 2px" },
+        titleSub: { fontSize:10, color:"#d4af37", letterSpacing:3, textTransform:"uppercase" },
+        rule:     { width:80, height:1, background:"linear-gradient(90deg,transparent,#d4af37,transparent)", margin:"10px auto 0" },
+        navWrap:  { background:"rgba(0,0,0,.35)", borderBottom:"1px solid rgba(212,175,55,.2)" },
+        navRow:   { display:"flex" },
+        navBtn:   (a,last) => ({ flex:1, padding:"10px 4px", background:"none", border:"none", borderBottom:a?"2px solid #d4af37":"2px solid transparent", borderRight:last?"none":"1px solid rgba(255,255,255,.04)", color:a?"#d4af37":"rgba(240,234,214,.45)", fontFamily:"Georgia,serif", fontSize:11, letterSpacing:.8, textTransform:"uppercase", cursor:"pointer", lineHeight:1.2 }),
+        navDiv:   { height:1, background:"rgba(212,175,55,.12)" },
+        body:     { padding:"16px 14px" },
+        weekRow:  { display:"flex", gap:8, marginBottom:16, justifyContent:"center" },
+        dayTag:   { background:"rgba(212,175,55,.1)", border:"1px solid rgba(212,175,55,.3)", borderRadius:6, padding:"7px 16px", fontSize:12, color:"#d4af37", letterSpacing:1, textTransform:"uppercase" },
+        row:      { display:"flex", alignItems:"center", padding:"11px 14px", marginBottom:6, background:"rgba(255,255,255,.03)", borderRadius:8, border:"1px solid rgba(255,255,255,.06)" },
+        name:     { flex:1, fontSize:15, letterSpacing:.3 },
+        btn:      (a,f) => ({ width:50, height:30, borderRadius:5, border:`1px solid ${a?"#d4af37":"rgba(255,255,255,.12)"}`, background:f?"rgba(212,175,55,.55)":a?"rgba(212,175,55,.22)":"rgba(0,0,0,.35)", color:a?"#d4af37":"rgba(240,234,214,.28)", fontSize:10, fontWeight:"bold", letterSpacing:1, cursor:"pointer", transition:"all .15s" }),
+        tGrid:    { display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 },
+        tBox:     { background:"rgba(0,0,0,.3)", borderRadius:10, padding:"14px 12px", border:"1px solid rgba(212,175,55,.18)" },
+        tH:       { fontSize:10, letterSpacing:2, color:"#d4af37", textTransform:"uppercase", marginBottom:8 },
+        tN:       { fontSize:30, fontWeight:"bold", color:"#d4af37", lineHeight:1, marginBottom:8 },
+        tItem:    { display:"block", fontSize:13, padding:"5px 0", color:"#f0ead6", borderBottom:"1px solid rgba(255,255,255,.04)" },
+        dSec:     { marginBottom:24 },
+        dTitle:   { fontSize:11, letterSpacing:2, color:"#d4af37", textTransform:"uppercase", marginBottom:12, paddingBottom:6, borderBottom:"1px solid rgba(212,175,55,.2)" },
+        gCard:    (ci) => ({ background:"rgba(0,0,0,.22)", borderRadius:10, padding:"14px 16px", marginBottom:10, border:`1px solid ${GROUP_COLORS[ci%6]}2a`, borderLeft:`3px solid ${GROUP_COLORS[ci%6]}` }),
+        gTitle:   (ci) => ({ fontSize:11, letterSpacing:2, color:GROUP_COLORS[ci%6], textTransform:"uppercase", marginBottom:10, fontWeight:"bold", display:"flex", alignItems:"center", gap:8 }),
+        forming:  { fontSize:9, letterSpacing:1, color:"rgba(240,234,214,.35)", background:"rgba(255,255,255,.05)", borderRadius:4, padding:"2px 8px", textTransform:"uppercase" },
+        slot:     (f) => ({ display:"flex", alignItems:"center", gap:8, padding:"7px 0", borderBottom:"1px solid rgba(255,255,255,.04)", color:f?"#f0ead6":"rgba(240,234,214,.2)", fontSize:14 }),
+        dot:      (f,ci) => ({ width:7, height:7, borderRadius:"50%", background:f?GROUP_COLORS[ci%6]:"rgba(255,255,255,.1)", flexShrink:0 }),
+        label:    { fontSize:10, letterSpacing:2, color:"#d4af37", textTransform:"uppercase", marginBottom:10, marginTop:18 },
+        input:    { background:"rgba(255,255,255,.06)", border:"1px solid rgba(212,175,55,.22)", borderRadius:7, padding:"10px 14px", color:"#f0ead6", fontFamily:"Georgia,serif", fontSize:15, width:"100%", boxSizing:"border-box", outline:"none" },
+        addBtn:   { marginTop:8, width:"100%", padding:10, background:"rgba(212,175,55,.12)", border:"1px solid rgba(212,175,55,.28)", borderRadius:7, color:"#d4af37", fontFamily:"Georgia,serif", fontSize:14, cursor:"pointer" },
+        aRow:     { display:"flex", alignItems:"center", padding:"9px 12px", marginBottom:6, background:"rgba(255,255,255,.04)", borderRadius:7, gap:8 },
+        icon:     (c) => ({ background:"none", border:"none", color:c||"rgba(240,234,214,.35)", cursor:"pointer", fontSize:16, padding:"2px 5px" }),
+        upBox:    { background:"rgba(0,0,0,.22)", border:"1px dashed rgba(212,175,55,.3)", borderRadius:10, padding:"18px 16px", marginBottom:16, textAlign:"center" },
+        pGrid:    { display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 },
+        pCard:    { background:"rgba(0,0,0,.28)", borderRadius:8, overflow:"hidden", border:"1px solid rgba(255,255,255,.06)", cursor:"pointer" },
+        pImg:     { width:"100%", aspectRatio:"1", objectFit:"cover", display:"block" },
+        lockBox:  { textAlign:"center", padding:"40px 20px" },
+        lbOv:     { position:"fixed", inset:0, background:"rgba(0,0,0,.94)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 },
+        lbImg:    { maxWidth:"100%", maxHeight:"68vh", borderRadius:8, objectFit:"contain" },
+        lbClose:  { position:"absolute", top:20, right:20, background:"none", border:"none", color:"#d4af37", fontSize:28, cursor:"pointer" },
+      };
+
+      function PhotoWall({ wallPhotos, wallKey, uploaderVal, setUploaderVal, captionVal, setCaptionVal, fileInputRef, accent, showTagline=true, multi=false }) {
+        const capRef = useRef(null);
+        async function handleUpload(files) {
+          const cap = capRef.current?.value || "";
+          if (capRef.current) capRef.current.value = "";
+          const fileArr = Array.from(files);
+          for (let i = 0; i < fileArr.length; i++) {
+            await uploadPhoto(fileArr[i], wallKey, "", cap);
+            // Small delay between uploads to avoid DB race
+            if (i < fileArr.length - 1) await new Promise(r => setTimeout(r, 400));
+          }
+        }
+        return (
+          <>
+            <div style={C.upBox}>
+              <div style={{fontSize:24,marginBottom:6}}>📸</div>
+              {showTagline&&<div style={{fontSize:12,color:"rgba(240,234,214,.45)",marginBottom:12}}>Post anything — course shots, celebrations, whatever</div>}
+              <input ref={capRef} style={{...C.input,marginBottom:10}} placeholder="Caption (optional)"/>
+              <input ref={fileInputRef} type="file" accept="image/*" multiple={multi} style={{display:"none"}} onChange={e=>{handleUpload(e.target.files);if(fileInputRef.current)fileInputRef.current.value="";}}/>
+              <button style={{...C.addBtn,marginTop:0}} onClick={()=>fileInputRef.current?.click()} disabled={uploading}>{uploading?"Uploading...":multi?"📷 Choose Photos":"📷 Choose Photo"}</button>
+            </div>
+            {wallPhotos.length===0
+              ? <div style={{textAlign:"center",color:"rgba(240,234,214,.3)",fontSize:14,fontStyle:"italic",marginTop:20}}>No pics yet — be the first</div>
+              : <div style={C.pGrid}>{wallPhotos.map(p=>(
+                  <div key={p.id} style={C.pCard} onClick={()=>{setLightbox({...p,wall:wallKey});setLightboxList(wallPhotos);}}>
+                    <img src={p.dataUrl} alt="" style={C.pImg}/>
+                    <div style={{padding:"8px 10px"}}>
+                      {p.uploader&&<div style={{fontSize:12,color:accent||"#d4af37",letterSpacing:.5}}>{p.uploader}</div>}
+                      {p.caption&&<div style={{fontSize:13,color:"rgba(240,234,214,.8)",marginTop:2}}>{p.caption}</div>}
+                      <div style={{fontSize:10,color:"rgba(240,234,214,.3)",marginTop:4}}>{p.ts}</div>
+                    </div>
+                  </div>
+                ))}</div>
+            }
+          </>
+        );
+      }
+
+      function renderGroups(groups, dayLabel) {
+        if (!groups.length) return <div style={{color:"rgba(240,234,214,.3)",fontSize:13,fontStyle:"italic",textAlign:"center",padding:"20px 0"}}>No signups yet for {dayLabel}</div>;
+        return groups.map((group,gi)=>{
+          const slots=[...group,...Array(4-group.length).fill(null)];
+          return (
+            <div key={gi} style={C.gCard(gi)}>
+              <div style={C.gTitle(gi)}>Rando {gi+1} {group.length<4&&<span style={C.forming}>Forming...</span>}</div>
+              {slots.map((p,si)=><div key={si} style={C.slot(!!p)}><div style={C.dot(!!p,gi)}/>{p||"—"}</div>)}
+            </div>
+          );
+        });
+      }
+
+      if (loading) return (
+        <div style={{...C.app,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{color:"#d4af37",letterSpacing:2,fontSize:13}}>LOADING...</div>
+        </div>
+      );
+
+      // Group password gate
+        if (!groupUnlocked) return (
+          <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:CONFIG.bgColor}}>
+            <div style={{background:"rgba(0,0,0,0.4)",border:"2px solid #d4af37",borderRadius:20,padding:32,maxWidth:320,width:"100%",textAlign:"center",fontFamily:"Georgia,serif"}}>
+              <GolfBallLogo size={80}/>
+              <div style={{fontSize:20,fontWeight:"bold",color:"#f0ead6",margin:"16px 0 4px",letterSpacing:1}}>{CONFIG.clubName}</div>
+              <div style={{fontSize:12,color:"#d4af37",letterSpacing:2,textTransform:"uppercase",marginBottom:24}}>{CONFIG.tagline}</div>
+              <input
+                style={{width:"100%",background:"rgba(255,255,255,0.1)",border:"1px solid rgba(212,175,55,0.4)",borderRadius:8,padding:"10px 14px",color:"#f0ead6",fontFamily:"Georgia,serif",fontSize:15,textAlign:"center",marginBottom:8,outline:"none"}}
+                type="password" placeholder="Enter group code"
+                value={groupPwInput} onChange={e=>{setGroupPwInput(e.target.value);setGroupPwError(false);}}
+                onKeyDown={e=>e.key==="Enter"&&handleGroupLogin()}
+              />
+              {groupPwError&&<div style={{color:"#e05c5c",fontSize:13,marginBottom:8}}>Wrong code — try again</div>}
+              <button
+                style={{width:"100%",background:"#d4af37",border:"none",borderRadius:8,padding:"12px",color:"#0d3d22",fontFamily:"Georgia,serif",fontSize:15,fontWeight:"bold",cursor:"pointer"}}
+                onClick={handleGroupLogin}>Enter
+              </button>
+              <div style={{fontSize:11,color:"rgba(240,234,214,0.3)",marginTop:16}}>SHEET-TEE</div>
+            </div>
+          </div>
+        );
+
+        return (
+        <div style={C.app}>
+          {lightbox&&(()=>{
+            const lbIdx = lightboxList.findIndex(p=>p.id===lightbox.id);
+            function lbPrev(e){e.stopPropagation();const i=(lbIdx-1+lightboxList.length)%lightboxList.length;setLightbox({...lightboxList[i],wall:lightbox.wall});}
+            function lbNext(e){e.stopPropagation();const i=(lbIdx+1)%lightboxList.length;setLightbox({...lightboxList[i],wall:lightbox.wall});}
+            let touchStartX=null;
+            function onTouchStart(e){touchStartX=e.touches[0].clientX;}
+            function onTouchEnd(e){
+              if(touchStartX===null)return;
+              const diff=touchStartX-e.changedTouches[0].clientX;
+              if(Math.abs(diff)>40){diff>0?lbNext(e):lbPrev(e);}
+              touchStartX=null;
+            }
+            return (
+              <div style={C.lbOv} onClick={()=>setLightbox(null)} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+                <button style={C.lbClose} onClick={()=>setLightbox(null)}>✕</button>
+                {lightboxList.length>1&&<button onClick={lbPrev} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",background:"rgba(0,0,0,.5)",border:"1px solid rgba(255,255,255,.15)",borderRadius:"50%",width:40,height:40,color:"#d4af37",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>}
+                <img src={lightbox.dataUrl} alt="" style={C.lbImg} onClick={e=>e.stopPropagation()}/>
+                {lightboxList.length>1&&<button onClick={lbNext} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"rgba(0,0,0,.5)",border:"1px solid rgba(255,255,255,.15)",borderRadius:"50%",width:40,height:40,color:"#d4af37",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>}
+                {lightbox.caption&&<div style={{marginTop:14,textAlign:"center",fontSize:15}}>{lightbox.caption}</div>}
+                <div style={{marginTop:6,fontSize:12,color:"rgba(240,234,214,.4)"}}>{lbIdx+1} / {lightboxList.length} · {lightbox.ts}</div>
+                {adminUnlocked&&<button style={{...C.addBtn,marginTop:16,color:"#e05c5c",borderColor:"rgba(224,92,92,.35)",width:"auto",padding:"8px 24px"}} onClick={e=>{e.stopPropagation();deletePhoto(lightbox.id,lightbox.wall);}}>Delete Photo</button>}
+              </div>
+            );
+          })()}
+
+          <div style={C.header}>
+            {CONFIG.logoUrl
+              ? <div style={{display:"flex",justifyContent:"center"}}><img src={CONFIG.logoUrl} alt={CONFIG.clubName} style={{width:80,height:80,borderRadius:"50%",objectFit:"cover"}}/></div>
+              : <div style={{display:"flex",justifyContent:"center"}}><GolfBallLogo size={80}/></div>}
+            <div style={C.title}>{CONFIG.clubName}</div>
+            <div style={{...C.titleSub, color:"#d4af37", fontSize:12, letterSpacing:2}}>{CONFIG.tagline}</div>
+            <div style={C.rule}/>
+          </div>
+
+          <div style={C.navWrap}>
+            <div style={C.navRow}>{ROW1.map(([v,l],i)=><button key={v} style={C.navBtn(view===v,i===ROW1.length-1)} onClick={()=>setView(v)}>{l}</button>)}</div>
+            <div style={C.navDiv}/>
+            <div style={C.navRow}>{ROW2.map(([v,l],i)=><button key={v} style={C.navBtn(view===v,i===ROW2.length-1)} onClick={()=>setView(v)}>{l}</button>)}</div>
+          </div>
+
+          <div style={C.body}>
+            {view==="signup"&&<>
+              {(()=>{
+                const allDayKeys = ['fri1','sat','sun','mon1','fri2','fri','mon','mon2'];
+                const alwaysOn = ['sat','sun','fri','mon'];
+                const visibleDays = allDayKeys.filter(k => alwaysOn.includes(k) || activeDays[k]);
+                const toggleStyle = (active) => ({padding:"4px 7px",borderRadius:5,border:`1px solid ${active?"#d4af37":"rgba(255,255,255,.15)"}`,background:active?"rgba(212,175,55,.22)":"rgba(0,0,0,.3)",color:active?"#d4af37":"rgba(240,234,214,.4)",fontSize:9,fontWeight:"bold",letterSpacing:.5,cursor:"pointer"});
+                const dayLabel = (k) => {
+                  const d = D[k];
+                  const prefix = k==='fri1'||k==='fri2'?'FRI':k==='sat'||k==='fri'?'SAT':k==='sun'||k==='mon'?'SUN':'MON';
+                  return `${prefix} ${d.mon} ${d.day}`;
+                };
+                return (
+                  <div style={{marginBottom:14}}>
+                    <div style={{textAlign:"center",fontSize:11,color:"rgba(212,175,55,0.7)",letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{CONFIG.cityLabel||""}</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,marginBottom:8}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:3,marginRight:4}}>
+                        <button onClick={()=>toggleDay("fri1")} style={toggleStyle(activeDays.fri1)}>FRI1</button>
+                        <button onClick={()=>toggleDay("mon1")} style={toggleStyle(activeDays.mon1)}>MON1</button>
+                      </div>
+                      <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"center",flex:1}}>
+                        {visibleDays.map(k=>(
+                          <div key={k} style={{...C.dayTag,textAlign:"center",padding:"5px 8px",minWidth:70}}>
+                            <div style={{fontSize:10,letterSpacing:.5}}>{dayLabel(k)}</div>
+                            {weather?.[k]&&<div style={{fontSize:10,color:"rgba(240,234,214,.6)",marginTop:2}}>{weather[k].icon} {weather[k].hi}° · {weather[k].rain}%</div>}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:3,marginLeft:4}}>
+                        <button onClick={()=>toggleDay("fri2")} style={toggleStyle(activeDays.fri2)}>FRI2</button>
+                        <button onClick={()=>toggleDay("mon2")} style={toggleStyle(activeDays.mon2)}>MON2</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              {players.map(name=>{
+                const sg=signups[name]||{};
+                const allDayKeys=['fri1','sat','sun','mon1','fri2','fri','mon','mon2'];
+                const alwaysOn=['sat','sun','fri','mon'];
+                const btnDays=allDayKeys.filter(k=>alwaysOn.includes(k)||activeDays[k]);
+                return (
+                  <div key={name} style={C.row}>
+                    <div style={C.name}>{name}</div>
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      {btnDays.map(k=>(
+                        <button key={k} style={{...C.btn(sg[k],flash===name+k),width:30,fontSize:10,padding:0}} onClick={()=>toggle(name,k)}>{D[k].day}</button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{marginTop:16,background:"rgba(255,255,255,.03)",borderRadius:8,border:"1px solid rgba(212,175,55,.15)",padding:"12px 14px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:10,letterSpacing:2,color:"rgba(212,175,55,.6)",textTransform:"uppercase"}}>Guest / Other</div>{guestPlayers.length>0&&<button onClick={async()=>{setGuestPlayers([]);await dbSet(`guests-${weekKey}`,[]);}} style={{background:"none",border:"none",color:"rgba(224,92,92,.6)",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>Clear</button>}</div>
+                <GuestRow signups={signups} onToggle={toggle} onAddGuest={addGuest} guestPlayers={guestPlayers} flash={flash} activeDays={activeDays} D={D}/>
+              </div>
+              <div style={{textAlign:"center",marginTop:24}}>
+                <button style={{background:"none",border:"none",color:"rgba(240,234,214,.1)",fontSize:10,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}} onClick={()=>setView("admin")}>admin</button>
+              </div>
+            </>}
+
+            {view==="tally"&&<>
+              <div style={C.tGrid}>
+                {['fri1','sat','sun','mon1','fri2','fri','mon','mon2'].filter(k=>['sat','sun','fri','mon'].includes(k)||activeDays[k]).map(k=>{
+                  const allP=[...players,...guestPlayers];
+                  const list=allP.filter(p=>signups[p]?.[k]);
+                  const prefix=k==='fri1'||k==='fri2'?'FRI':k==='sat'||k==='fri'?'SAT':k==='sun'||k==='mon'?'SUN':'MON';
+                  const label=`${prefix} ${D[k]?.mon} ${D[k]?.day}`;
+                  return(
+                    <div key={k} style={C.tBox}>
+                      <div style={C.tH}>{label}</div>
+                      <div style={C.tN}>{list.length}</div>
+                      {list.length===0?<div style={{color:"rgba(240,234,214,.3)",fontSize:13,fontStyle:"italic"}}>None yet</div>:list.map(p=><div key={p} style={C.tItem}>✓ {p}</div>)}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{marginTop:16,textAlign:"center"}}>
+                <button onClick={()=>setShowPlaya(p=>!p)} style={{background:"rgba(212,175,55,.1)",border:"1px solid rgba(212,175,55,.35)",borderRadius:10,padding:"12px 24px",color:"#d4af37",fontFamily:"Georgia,serif",fontSize:14,letterSpacing:1,cursor:"pointer",width:"100%"}}>
+                  🏌️ The Playa Club {showPlaya?"▲":"▼"}
+                </button>
+                <div style={{fontSize:11,color:"rgba(240,234,214,.3)",fontStyle:"italic",letterSpacing:.5,textAlign:"center",marginTop:5,marginBottom:4}}>A New Excuse Unlike Any Other</div>
+                {showPlaya&&!PREMIUM()&&<div style={{padding:16,textAlign:"center",color:"rgba(212,175,55,0.5)",fontSize:13}}>🔒 Playa Club Leaderboard is a <strong style={{color:"#d4af37"}}>Premium</strong> feature</div>}
+                {showPlaya&&PREMIUM()&&<div style={{marginTop:8,background:"rgba(0,0,0,.3)",borderRadius:10,border:"1px solid rgba(212,175,55,.18)",padding:"16px 14px",textAlign:"left"}}>
+                  {(()=>{
+                    const entries = Object.entries(allTimeRounds).filter(([,r])=>r>0).sort((a,b)=>b[1]-a[1]);
+                    if (!entries.length) return <div style={{color:"rgba(240,234,214,.3)",fontSize:13,fontStyle:"italic",textAlign:"center"}}>No rounds logged yet</div>;
+                    return entries.map(([name,rounds],i)=>(
+                      <div key={name} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.05)"}}>
+                        <div style={{width:24,fontSize:12,color:i===0?"#d4af37":i===1?"#c0c0c0":i===2?"#cd7f32":"rgba(240,234,214,.35)",fontWeight:"bold"}}>{i+1}</div>
+                        <div style={{flex:1,fontSize:15}}>{name}</div>
+                        {adminUnlocked&&editingRounds===name
+                          ? <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                              <input type="number" min="0" style={{width:52,background:"rgba(255,255,255,.1)",border:"1px solid #d4af37",borderRadius:5,padding:"3px 6px",color:"#f0ead6",fontSize:13,textAlign:"center"}} value={roundsInput} onChange={e=>setRoundsInput(e.target.value)} autoFocus/>
+                              <button style={{background:"none",border:"none",color:"#7ec8a0",fontSize:14,cursor:"pointer"}} onClick={async()=>{const v=parseInt(roundsInput)||0;const next={...allTimeRounds,[name]:v};await dbSet("allTimeRounds",next);setAllTimeRounds(next);setEditingRounds(null);}}>✓</button>
+                              <button style={{background:"none",border:"none",color:"rgba(240,234,214,.4)",fontSize:14,cursor:"pointer"}} onClick={()=>setEditingRounds(null)}>✕</button>
+                            </div>
+                          : <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{fontSize:14,color:"#d4af37",fontWeight:"bold"}}>{rounds} <span style={{fontSize:11,color:"rgba(240,234,214,.4)",fontWeight:"normal"}}>rounds</span></div>
+                              {adminUnlocked&&<button style={{background:"none",border:"none",color:"rgba(212,175,55,.5)",fontSize:12,cursor:"pointer",padding:0}} onClick={()=>{setEditingRounds(name);setRoundsInput(String(rounds));}}>✎</button>}
+                            </div>
+                        }
+                      </div>
+                    ));
+                  })()}
+                </div>}
+              </div>
+            </>}
+
+            {view==="groups"&&<>
+              {['fri1','sat','sun','mon1','fri2','fri','mon','mon2'].filter(k=>['sat','sun','fri','mon'].includes(k)||activeDays[k]).map(k=>{
+                const allP=[...players,...guestPlayers];
+                const signedUp=new Set(allP.filter(p=>signups[p]?.[k]));
+                const filteredOrder=(groupOrder[k]||[]).filter(p=>signedUp.has(p));
+                if(signedUp.size===0) return null;
+                const prefix=k==='fri1'||k==='fri2'?'FRI':k==='sat'||k==='fri'?'SAT':k==='sun'||k==='mon'?'SUN':'MON';
+                const label=`${prefix} ${D[k]?.mon} ${D[k]?.day}`;
+                return(
+                  <div key={k} style={C.dSec}>
+                    <div style={C.dTitle}>⛳ {label} — {signedUp.size} playing</div>
+                    {renderGroups(chunkEvenly(filteredOrder),"day")}
+                  </div>
+                );
+              })}
+            </>}
+
+            {view==="photos"&&<PhotoWall wallPhotos={photos} wallKey="pics" uploaderVal={uploaderName} setUploaderVal={setUploaderName} captionVal={caption} setCaptionVal={setCaption} fileInputRef={fileRef} accent="#d4af37" multi={true}/>}
+
+            {view==="bunker"&&<>
+              <div style={{textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:28}}>⛺</div>
+                <div style={{fontSize:16,color:"#7ec8a0",letterSpacing:2,textTransform:"uppercase",fontWeight:"bold"}}>{CONFIG.bunkerName}</div>
+                <div style={{fontSize:11,color:"rgba(240,234,214,.4)",marginTop:4,fontStyle:"italic"}}>{CONFIG.bunkerTagline}</div>
+              </div>
+              <PhotoWall wallPhotos={bunkerPhotos} wallKey="bunker" uploaderVal={bunkerUploader} setUploaderVal={setBunkerUploader} captionVal={bunkerCaption} setCaptionVal={setBunkerCaption} fileInputRef={bunkerRef} accent="#7ec8a0" showTagline={false} multi={true}/>
+            </>}
+
+            {view==="ace"&&(!aceUnlocked?(
+              <div style={C.lockBox}>
+                <div style={{fontSize:40,marginBottom:12}}>🏆</div>
+                <div style={{fontSize:16,color:"#d4af37",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Hole in One</div>
+                <div style={{fontSize:13,color:"rgba(212,175,55,.6)",fontStyle:"italic",marginBottom:20}}>Only for those who have achieved the impossible</div>
+                <input style={{...C.input,textAlign:"center",marginBottom:8}} type="password" placeholder="Password" value={acePwInput} onChange={e=>setAcePwInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAceLogin()}/>
+                {acePwError&&<div style={{color:"#e05c5c",fontSize:13,marginBottom:8}}>Wrong password</div>}
+                <button style={C.addBtn} onClick={handleAceLogin}>Enter</button>
+              </div>
+            ):<>
+              <div style={{textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:28}}>🏆</div>
+                <div style={{fontSize:16,color:"#d4af37",letterSpacing:2,textTransform:"uppercase",fontWeight:"bold"}}>Hole in One</div>
+                <div style={{fontSize:11,color:"rgba(240,234,214,.4)",marginTop:4,fontStyle:"italic"}}>Only for those who have achieved the impossible</div>
+              </div>
+              <PhotoWall wallPhotos={acePhotos} wallKey="ace" uploaderVal={aceUploader} setUploaderVal={setAceUploader} captionVal={aceCaption} setCaptionVal={setAceCaption} fileInputRef={aceRef} accent="#d4af37"/>
+            </>)}
+
+            {view==="admin"&&(!adminUnlocked?<>
+              <div style={C.label}>Admin Access</div>
+              <input style={C.input} type="password" placeholder="Enter admin password" value={pwInput} onChange={e=>setPwInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminLogin()}/>
+              {pwError&&<div style={{color:"#e05c5c",fontSize:13,marginTop:8}}>Wrong password</div>}
+              <button style={C.addBtn} onClick={handleAdminLogin}>Unlock</button>
+            </>:<>
+              <div style={C.label}>Roster</div>
+              {players.map((p,i)=>(
+                <div key={i} style={C.aRow}>
+                  {editIdx===i?<>
+                    <input style={{...C.input,flex:1,padding:"6px 10px",fontSize:14}} value={editName} onChange={e=>setEditName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit(i)} autoFocus/>
+                    <button style={C.icon("#d4af37")} onClick={()=>saveEdit(i)}>✓</button>
+                    <button style={C.icon()} onClick={()=>setEditIdx(null)}>✕</button>
+                  </>:<>
+                    <div style={{flex:1,fontSize:15}}>{p}</div>
+                    <button style={C.icon("rgba(212,175,55,.7)")} onClick={()=>{setEditIdx(i);setEditName(p);}}>✎</button>
+                    <button style={C.icon("#e05c5c")} onClick={()=>removePlayer(i)}>✕</button>
+                  </>}
+                </div>
+              ))}
+              <div style={C.label}>Add Player</div>
+              <input style={C.input} placeholder="Full name" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPlayer()}/>
+              <button style={C.addBtn} onClick={addPlayer}>+ Add to Roster</button>
+              <div style={C.label}>Change Passwords</div>
+              <input style={{...C.input,marginBottom:8}} type="text" placeholder={`New admin password (current: ${passwords.admin})`} value={newAdminPw} onChange={e=>setNewAdminPw(e.target.value)}/>
+              <input style={{...C.input,marginBottom:8}} type="text" placeholder={`New Hole in One password (current: ${passwords.ace})`} value={newAcePw} onChange={e=>setNewAcePw(e.target.value)}/>
+              <button style={C.addBtn} onClick={savePasswords}>Save Passwords</button>
+              {pwSaved&&<div style={{color:"#7ec8a0",fontSize:13,marginTop:8,textAlign:"center"}}>{pwSaved}</div>}
+              <div style={C.label}>Reset Week</div>
+              <button style={{...C.addBtn,color:"#e05c5c",borderColor:"rgba(224,92,92,.35)"}} onClick={clearWeek}>Clear All Signups &amp; Groups</button>
+            </>)}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js');
+    }
+
+    // ── iOS Chrome Banner ──────────────────────────────────────
+    (function() {
+      var isIOS    = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      var isChrome = /CriOS/i.test(navigator.userAgent);
+      if (!isIOS || !isChrome) return;
+      // Show banner after DOM loads
+      window.addEventListener('DOMContentLoaded', function() {
+        var banner = document.createElement('div');
+        banner.style.cssText = [
+          'position:fixed;top:0;left:0;right:0;z-index:10000;',
+          'background:#d4af37;color:#0d3d22;',
+          'padding:10px 16px;',
+          'font-family:Georgia,serif;font-size:13px;',
+          'display:flex;align-items:center;justify-content:space-between;gap:12px;',
+          'box-shadow:0 2px 8px rgba(0,0,0,0.3);'
+        ].join('');
+        banner.innerHTML = [
+          '<span>',
+            '<strong>📱 Tip:</strong> For the best experience & to add this app to your Home Screen, ',
+            'open this page in <strong>Safari</strong>.',
+          '</span>',
+          '<button id="ios-banner-x" style="',
+            'background:none;border:none;color:#0d3d22;',
+            'font-size:18px;cursor:pointer;padding:0 4px;flex-shrink:0;',
+          '">✕</button>'
+        ].join('');
+        document.body.appendChild(banner);
+        document.getElementById('ios-banner-x').onclick = function() {
+          banner.remove();
+        };
+      });
+    })();
+
+    // ── PWA Install Popup ──────────────────────────────────────
+    (function() {
+      var isStandalone = window.navigator.standalone ||
+                         window.matchMedia('(display-mode: standalone)').matches;
+      if (isStandalone) return;
+
+      var WEEK = 7 * 24 * 60 * 60 * 1000;
+      var now  = Date.now();
+      if (now - parseInt(localStorage.getItem('pwa-dismissed') || 0) < WEEK) return;
+      if (now - parseInt(localStorage.getItem('pwa-shown')    || 0) < WEEK) return;
+      localStorage.setItem('pwa-shown', now);
+
+      // Build overlay
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;';
+
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#1a3a2a;border:2px solid #d4af37;border-radius:20px;padding:32px 28px;max-width:320px;width:100%;text-align:center;font-family:Georgia,serif;position:relative;';
+
+      card.innerHTML = [
+        '<button id="pwa-x" style="position:absolute;top:12px;right:16px;background:none;border:none;color:rgba(212,175,55,0.5);font-size:20px;cursor:pointer;">&#x2715;</button>',
+        '<img src="https://sheet-tee.github.io/sheet-tee-demo/golf-ball.png" style="width:130px;height:130px;object-fit:contain;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;"/>',
+        '<div style="font-size:16px;font-weight:bold;color:#f0ead6;margin-bottom:20px;line-height:1.5;">For the best user experience,<br/>please add the app:</div>',
+        '<div id="pwa-btns" style="display:flex;gap:12px;justify-content:center;margin-bottom:20px;">',
+          '<button id="pwa-add" style="background:#d4af37;border:none;color:#0d3d22;padding:11px 24px;border-radius:8px;font-family:Georgia,serif;font-size:14px;font-weight:bold;cursor:pointer;">Add App</button>',
+          '<button id="pwa-no"  style="background:none;border:1px solid rgba(212,175,55,0.4);color:rgba(240,234,214,0.6);padding:11px 24px;border-radius:8px;font-family:Georgia,serif;font-size:14px;cursor:pointer;">No</button>',
+        '</div>',
+        '<div style="font-size:18px;font-weight:bold;color:#d4af37;letter-spacing:2px;">SHEET-TEE</div>'
+      ].join('');
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      function dismiss() {
+        localStorage.setItem('pwa-dismissed', Date.now());
+        overlay.remove();
+      }
+
+      document.getElementById('pwa-x').onclick  = dismiss;
+      document.getElementById('pwa-no').onclick  = dismiss;
+
+      // Stash the beforeinstallprompt event (Android)
+      var deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        deferredPrompt = e;
+      });
+
+      document.getElementById('pwa-add').onclick = async function() {
+        // ANDROID — native install dialog
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          var result = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          dismiss();
+        }
+        // iOS / other — show manual instructions
+        else {
+          var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+          var html;
+          if (isIOS) {
+            html = [
+              '<div style="font-size:14px;color:#f0ead6;margin-bottom:16px;line-height:1.6;">',
+                'To add this app to your Home Screen:',
+              '</div>',
+              '<div style="background:rgba(0,0,0,0.3);border-radius:12px;padding:16px;margin-bottom:16px;text-align:left;">',
+                '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">',
+                  '<div style="font-size:28px;min-width:36px;text-align:center;">1️⃣</div>',
+                  '<div style="font-size:13px;color:#f0ead6;">Tap the <strong style=\"color:#d4af37\">Share</strong> button at the bottom of Safari <strong style=\"color:#d4af37\">(the box with an arrow pointing up ⬆)</strong></div>',
+                '</div>',
+                '<div style="display:flex;align-items:center;gap:12px;">',
+                  '<div style="font-size:28px;min-width:36px;text-align:center;">2️⃣</div>',
+                  '<div style="font-size:13px;color:#f0ead6;">Scroll down and tap <strong style=\"color:#d4af37\">\"Add to Home Screen\"</strong></div>',
+                '</div>',
+              '</div>',
+              '<button id="pwa-gotit" style="background:#d4af37;border:none;color:#0d3d22;padding:11px 24px;border-radius:8px;font-family:Georgia,serif;font-size:14px;font-weight:bold;cursor:pointer;width:100%;">Got it</button>'
+            ].join('');
+          } else {
+            html = [
+              '<div style="background:rgba(0,0,0,0.3);border-radius:12px;padding:16px;margin-bottom:16px;text-align:left;">',
+                '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">',
+                  '<div style="font-size:28px;min-width:36px;text-align:center;">1️⃣</div>',
+                  '<div style="font-size:13px;color:#f0ead6;">Tap the <strong style=\"color:#d4af37\">menu (⋮)</strong> in the top right of Chrome</div>',
+                '</div>',
+                '<div style="display:flex;align-items:center;gap:12px;">',
+                  '<div style="font-size:28px;min-width:36px;text-align:center;">2️⃣</div>',
+                  '<div style="font-size:13px;color:#f0ead6;">Tap <strong style=\"color:#d4af37\">\"Add to Home Screen\"</strong></div>',
+                '</div>',
+              '</div>',
+              '<button id="pwa-gotit" style="background:#d4af37;border:none;color:#0d3d22;padding:11px 24px;border-radius:8px;font-family:Georgia,serif;font-size:14px;font-weight:bold;cursor:pointer;width:100%;">Got it</button>'
+            ].join('');
+          }
+          document.getElementById('pwa-btns').innerHTML = html;
+          document.getElementById('pwa-gotit').onclick = dismiss;
+        }
+      };
+    })();
+  </script>
+
+</body>
+</html>
