@@ -1170,33 +1170,4 @@
         }
       };
     })();
-  </script>
-
-</body>
-</html>
-<script>
-  window.addEventListener('load', function() {
-    // 1. Find the big bunker image
-    // Note: Replace 'bunker-image-class' with the actual class name if you know it
-    const bunkerImg = document.querySelector('img[src*="bunker"]');
-    
-    if (bunkerImg) {
-      // 2. Create the new Camel Icon element
-      const camelIcon = document.createElement('div');
-      camelIcon.innerHTML = '🐪';
-      camelIcon.style.fontSize = '80px';
-      camelIcon.style.textAlign = 'center';
-      camelIcon.style.marginBottom = '10px';
-      
-      // 3. Swap the image for the camel
-      bunkerImg.parentNode.replaceChild(camelIcon, bunkerImg);
-    }
-    
-    // 4. Make sure "The Divot Bar" text is gold
-    const titleText = document.evaluate("//div[contains(., 'The Divot Bar')]", document, null, XPathResult.ANY_TYPE, null).iterateNext();
-    if (titleText) {
-      titleText.style.color = '#d4af37';
-      titleText.style.fontWeight = 'bold';
-    }
-  });
-</script>
+ 
